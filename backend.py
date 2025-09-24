@@ -2,12 +2,18 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yt_dlp
 import logging
+import os # Naya import
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
-CORS(app)  # This will allow requests from your frontend
+CORS(app)
+
+# YEH NAYA CODE HAI - Render ke health check ke liye
+@app.route('/')
+def health_check():
+    return jsonify({'status': 'ok', 'message': 'Backend is running!'})
 
 @app.route('/api/video-info', methods=['POST'])
 def get_video_info():
@@ -27,7 +33,6 @@ def get_video_info():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
-            # Sanitize the info to make it JSON serializable
             sanitized_info = ydl.sanitize_info(info)
 
             title = sanitized_info.get('title', 'No Title')
@@ -35,24 +40,20 @@ def get_video_info():
             
             formats_list = []
             
-            # Check for combined formats first (video+audio)
             if 'formats' in sanitized_info:
                 for f in sanitized_info['formats']:
-                    # We want downloadable formats with both video and audio, or just audio
                     if f.get('url') and (f.get('vcodec') != 'none' and f.get('acodec') != 'none' or f.get('vcodec') == 'none'):
                         quality = f.get('format_note') or f.get('resolution')
                         if f.get('vcodec') == 'none' and f.get('acodec') != 'none':
                             quality = 'Audio Only'
 
-                        # Ensure quality is a string and readable
                         if not quality or not isinstance(quality, str):
                             height = f.get('height')
                             if height:
                                 quality = f"{height}p"
                             else:
-                                continue # Skip if we can't determine a quality string
+                                continue 
                         
-                        # Prevent duplicate quality entries
                         if not any(d['quality'] == quality for d in formats_list):
                              formats_list.append({
                                 'quality': quality,
@@ -60,14 +61,12 @@ def get_video_info():
                                 'ext': f.get('ext')
                             })
 
-            # If no suitable formats found, check the main URL
-            if not formats_list:
+            if not formats_list and sanitized_info.get('url'):
                  formats_list.append({
-                    'quality': sanitized_info.get('height', 'Standard'),
+                    'quality': f"{sanitized_info.get('height')}p" if sanitized_info.get('height') else 'Standard',
                     'url': sanitized_info.get('url'),
                     'ext': sanitized_info.get('ext')
                  })
-
 
             if not formats_list:
                  return jsonify({'error': 'No downloadable formats found'}), 500
@@ -88,5 +87,8 @@ def get_video_info():
         logging.error(f"Generic error for URL {url}: {e}")
         return jsonify({'error': 'An unexpected error occurred.'}), 500
 
+# Yeh hissa Render par nahi chalta, sirf local machine ke liye hai
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # Render port dega, local par 5000 istemaal hoga
+    port = int(os.environ.get('PORT', 5000)) 
+    app.run(host='0.0.0.0', port=port)
